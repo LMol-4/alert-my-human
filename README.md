@@ -26,7 +26,7 @@ Returns which channels are currently configured. No params. Call this before `se
 | `message`  | string                            | Yes      | Body of the alert.                                                    |
 | `context`  | object of string key/value pairs  | No       | Extra details rendered as a list (e.g. job name, error code).        |
 
-Channels are delivered independently, so one failing channel doesn't block the others — the response reports which channels sent and which failed. Each delivery is bounded by a 10s timeout and retried once on a transient failure (network error, timeout, HTTP 429, or 5xx).
+Channels are delivered independently, so one failing channel doesn't block the others — the response reports which channels sent and which failed. HTTP deliveries use a 10s timeout per attempt and retry once after 500ms on a transient failure (network error, timeout, HTTP 429, or 5xx). Email SDK calls have a 10s timeout and are not retried. The route allows 30s so the HTTP retry budget can finish. A timeout does not prove a provider rejected a message, so retries can occasionally produce duplicate alerts.
 
 ## Setup
 

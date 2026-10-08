@@ -57,6 +57,8 @@ Register the server with a static bearer token header, for example in Claude Cod
 
 ## Testing
 
+Run `pnpm test` for automated regression tests (provider requests are mocked), `pnpm lint` for lint checks, and `pnpm typecheck` for TypeScript checks.
+
 Run `npx @modelcontextprotocol/inspector@latest http://localhost:3000 undefined`, then connect it to `http://localhost:3000/api/mcp` with an `Authorization: Bearer <AUTH_API_KEY>` header.
 
 ## Roadmap

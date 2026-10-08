@@ -61,22 +61,6 @@ Run `pnpm test` for automated regression tests (provider requests are mocked), `
 
 Run `npx @modelcontextprotocol/inspector@latest http://localhost:3000 undefined`, then connect it to `http://localhost:3000/api/mcp` with an `Authorization: Bearer <AUTH_API_KEY>` header.
 
-## CI and Vercel deployments
-
-The GitHub Actions workflow runs lint, type checks, tests, and a production build on pull requests, pushes to `main`, and merge-queue updates. It uses Node.js 24, pinned pnpm, a frozen lockfile, and a dependency cache. It needs no deployment or provider secrets, so fork pull requests can run the same checks.
-
-Keep the [Vercel Git integration](https://vercel.com/docs/git/vercel-for-github) connected: branch pushes create previews, and merges to the configured production branch create production deployments. `vercel.json` runs `pnpm build:checked` as the build command, so a failing test, lint check, or type check stops both preview and production builds. Its explicit install/build commands use the same pnpm version as CI instead of relying on Vercel's lockfile-based package-manager detection. Update both commands when changing `packageManager` in `package.json`.
-
-For merge and release protection, complete these one-time dashboard settings after the first CI run:
-
-1. In GitHub branch protection or rulesets for `main`, require the **Quality checks** status before merging. Require an up-to-date branch or use a merge queue.
-2. In Vercel project settings, open **Deployment Checks**, add a **GitHub** check, and select **Quality checks**. Keep automatic production-domain assignment enabled. This holds production promotion until CI passes on the deployed commit. These dashboard settings are not enabled by committing the workflow.
-3. Keep production channel credentials scoped to Production. Use test destinations for any manually exercised preview environment; the automated tests mock provider calls.
-
-GitHub CI and Vercel builds can run concurrently. The build-command gate protects each deployment itself; [Deployment Checks](https://vercel.com/docs/deployment-checks) additionally gate production promotion on GitHub's result. Vercel also offers native lint/typecheck checks, but those alone do not run this test suite. A successful preview does not replace checks on the merged production commit.
-
-Vercel's [CLI-based GitHub Actions workflow](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel) (`vercel build` followed by `vercel deploy --prebuilt`) is an alternative when deployment must be owned entirely by CI. This project uses Git integration, so no Vercel token or second deployment workflow is needed.
-
 ## Roadmap
 
 - Phone call alerts

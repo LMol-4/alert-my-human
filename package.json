@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "build:checked": "pnpm check && pnpm build"
   },
   "dependencies": {
     "mcp-handler": "^1.1.0",
@@ -25,5 +27,9 @@
     "eslint-config-next": "16.2.10",
     "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": "24.x"
   }
 }

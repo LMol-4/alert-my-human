@@ -32,7 +32,7 @@ export async function fetchWithRetry(url: string, init: RequestInit): Promise<Re
     try {
       const res = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if (res.status === 429 || res.status >= 500) {
-        lastError = new Error(`${res.status} ${truncateBody(await res.text())}`);
+        lastError = new Error(`${res.status} ${await readErrorBody(res)}`);
         continue;
       }
       return res;
@@ -45,11 +45,47 @@ export async function fetchWithRetry(url: string, init: RequestInit): Promise<Re
 }
 
 // Bound a non-fetch promise (e.g. an SDK call) by the same timeout.
-export function withTimeout<T>(promise: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms),
-    ),
-  ]);
+export async function withTimeout<T>(promise: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Read only a bounded prefix of provider errors, then release the stream.
+// Truncating after response.text() still buffers the entire response in memory.
+export async function readErrorBody(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  const limit = 4096;
+  let bytes = 0;
+  let text = '';
+  try {
+    while (bytes < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value.subarray(0, limit - bytes);
+      bytes += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: true });
+    }
+    text += decoder.decode();
+    return truncateBody(text);
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+// Channels use only the HTTP status, so release successful response bodies too.
+export async function checkResponse(response: Response): Promise<void> {
+  if (!response.ok) throw new Error(`${response.status} ${await readErrorBody(response)}`);
+  await response.body?.cancel();
 }

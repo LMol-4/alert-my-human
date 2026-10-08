@@ -1,6 +1,6 @@
 import { renderTelegram } from '@/app/services/alert';
 import type { Channel } from './types';
-import { fetchWithRetry, truncateBody } from './http';
+import { fetchWithRetry, checkResponse } from './http';
 
 export const telegramChannel: Channel = {
   name: 'telegram',
@@ -12,6 +12,6 @@ export const telegramChannel: Channel = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, ...renderTelegram(alert) }),
     });
-    if (!res.ok) throw new Error(`${res.status} ${truncateBody(await res.text())}`);
+    await checkResponse(res);
   },
 };

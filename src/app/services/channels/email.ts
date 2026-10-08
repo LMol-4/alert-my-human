@@ -3,12 +3,14 @@ import { renderEmail } from '@/app/services/alert';
 import type { Channel } from './types';
 import { withTimeout } from './http';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize only when email is used; other channels need no Resend credentials.
+let resend: Resend | undefined;
 
 export const emailChannel: Channel = {
   name: 'email',
   isConfigured: () => Boolean(process.env.RESEND_API_KEY && process.env.SENDING_EMAIL && process.env.ALERT_EMAIL),
   async send(alert) {
+    resend ??= new Resend(process.env.RESEND_API_KEY);
     const { subject, html, text } = renderEmail(alert);
     const to = process.env
       .ALERT_EMAIL!.split(',')

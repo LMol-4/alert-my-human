@@ -1,6 +1,6 @@
 import { renderText } from '@/app/services/alert';
 import type { Channel } from './types';
-import { fetchWithRetry, truncateBody } from './http';
+import { fetchWithRetry, checkResponse } from './http';
 
 export const smsChannel: Channel = {
   name: 'sms',
@@ -24,6 +24,6 @@ export const smsChannel: Channel = {
       headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-    if (!res.ok) throw new Error(`${res.status} ${truncateBody(await res.text())}`);
+    await checkResponse(res);
   },
 };

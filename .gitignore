@@ -49,6 +49,3 @@ next-env.d.ts
 /LIGHTWEIGHT_LIBRARY_REVIEW.md
 /CONTRIBUTING.md
 /docs/
-
-# library build
-/dist/

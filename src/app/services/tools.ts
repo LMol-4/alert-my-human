@@ -15,10 +15,7 @@ export function listChannels() {
 }
 
 function describe(result: DeliveryResult) {
-  const details = [result.error && `${result.error.code}: ${result.error.message}`, result.reused && 'shared with an identical in-flight send']
-    .filter(Boolean)
-    .join('; ');
-  return `${result.destination}${details ? ` (${details})` : ''}`;
+  return result.error ? `${result.destination} (${result.error.code}: ${result.error.message})` : result.destination;
 }
 
 const LABELS: Array<[DeliveryResult['outcome'], string]> = [
@@ -26,7 +23,6 @@ const LABELS: Array<[DeliveryResult['outcome'], string]> = [
   ['rejected', 'Rejected'],
   ['unknown', 'Unknown outcome (may have been delivered)'],
   ['not_attempted', 'Not attempted'],
-  ['suppressed', 'Suppressed'],
 ];
 
 export async function sendAlert(input: {

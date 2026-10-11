@@ -1,13 +1,8 @@
 # alert-my-human
 
-Let your agent or script notify you when a task finishes, a job fails, or something needs your attention. Send alerts through email, Slack, Telegram, SMS, or webhooks.
+Let your agent notify you when a task finishes, a job fails, or it needs your attention. Send alerts through email, Slack, Telegram, SMS, or webhooks.
 
-Use it two ways, with one delivery core:
-
-- **MCP server** for agents: deploy on Vercel or run locally.
-- **TypeScript/JavaScript library** for scripts: import it and send directly.
-
-No database, queue, or background service. Bring your own provider credentials; hosting and notification providers may charge for usage.
+A small MCP server for personal automations. No database, queue, or background service. Bring your own provider credentials; hosting and notification providers may charge for usage.
 
 ## Quick start (MCP server)
 
@@ -83,49 +78,13 @@ Ask your agent: **“Use alert-my-human to list my channels, then send a test al
 
 Required: `channels`, `title` (up to 250 characters), and `message` (up to 4000). Optional: `severity` (`info`, `success`, `warning`, `error`; default `info`), `context` (up to 20 string key/value pairs), and `idempotencyKey` (reuse it when retrying the same alert).
 
-## Library
-
-Not yet published to npm. Build a tarball from a clone with `pnpm pack`, then `npm install ./alert-my-human-0.1.0.tgz` in your project. It has no runtime dependencies and needs Node.js 22 or later (tested on 24).
-
-```ts
-import { createAlerter, telegram, email } from 'alert-my-human';
-
-const alerts = createAlerter({
-  destinations: {
-    phone: telegram({ token: process.env.BOT_TOKEN!, chatId: process.env.CHAT_ID! }),
-    inbox: email({ apiKey: process.env.RESEND_API_KEY!, from: 'alerts@example.com', to: 'me@example.com' }),
-  },
-});
-
-const { results } = await alerts.send({
-  destinations: ['phone'],
-  title: 'Export complete',
-  message: 'Your file is ready.',
-});
-```
-
-Providers: `email`, `slack`, `telegram`, `sms`, and `webhook`. Name destinations however you like, including several of the same provider. `destinationsFromEnv()` builds destinations from the variables above. Invalid configuration throws at construction, naming the setting but never its value; invalid alerts make `send` throw before anything is sent.
-
-**Custom provider:** any object with `send(alert, options)`. Return `{ id }` when accepted; throw `DeliveryError` with a code and outcome for known failures. Other errors are reported as `unknown` with a generic message.
-
-```ts
-import { DeliveryError, type Provider } from 'alert-my-human';
-
-const desktop: Provider = {
-  async send(alert) {
-    const response = await fetch('http://localhost:8080/notify', { method: 'POST', body: alert.title });
-    if (!response.ok) throw new DeliveryError('HTTP_ERROR', `HTTP ${response.status}`);
-  },
-};
-```
-
 ## Results
 
-Each destination gets its own result:
+Each channel gets its own result:
 
-```ts
-{ destination: 'phone', outcome: 'accepted', attempts: 1, durationMs: 212, providerId: '42' }
-{ destination: 'inbox', outcome: 'unknown', attempts: 1, durationMs: 10003, error: { code: 'TIMEOUT', message: 'No response within 10s' } }
+```json
+{ "destination": "telegram", "outcome": "accepted", "attempts": 1, "durationMs": 212, "providerId": "42" }
+{ "destination": "email", "outcome": "unknown", "attempts": 1, "durationMs": 10003, "error": { "code": "TIMEOUT", "message": "No response within 10s" } }
 ```
 
 | Outcome | Meaning |
@@ -135,11 +94,11 @@ Each destination gets its own result:
 | `unknown` | No clear answer, e.g. a timeout; it may have been delivered. |
 | `not_attempted` | Not sent, e.g. an unknown channel name. |
 
-Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `ABORTED`, `UNKNOWN_DESTINATION`, `PROVIDER_ERROR`) and a short message without URLs or credentials. MCP returns the same data as structured content plus a text summary. It sets `isError` only when no destination accepted; on partial success, retry only the destinations that failed.
+Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `ABORTED`, `UNKNOWN_DESTINATION`, `PROVIDER_ERROR`) and a short message without URLs or credentials. `send_alert` returns them as structured content plus a text summary. It sets `isError` only when no destination accepted; on partial success, retry only the channels that failed.
 
 ## Delivery behavior
 
-- Each attempt times out after 10 seconds, and a send stops starting attempts after 25 seconds (`deadlineMs`). Library callers can also pass `signal` to cancel.
+- Each attempt times out after 10 seconds, and a send stops starting attempts after 25 seconds.
 - At most two attempts per destination. Rate limits (429) and server errors (5xx) are retried, honoring the provider's retry delay when it fits the deadline. Failures to connect are retried. 4xx responses are not.
 - Timeouts and dropped connections are not retried, since the provider may already have the alert. Exception: email with an `idempotencyKey`, which Resend deduplicates.
 - `idempotencyKey` is forwarded per destination as `<key>:<destination>` to Resend and to webhooks. It is not a universal guarantee; duplicates are still possible.
@@ -148,7 +107,7 @@ Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_
 
 ## Webhooks
 
-`WEBHOOK_URLS` takes one URL or a comma-separated list. Name entries with `name=url` (for example `home=https://...`); unnamed ones are called `webhook`, or `webhook-1`, `webhook-2`, ... when there are several. Each is its own destination with its own result. `WEBHOOK_SECRET`, if set, is sent as `Authorization: Bearer <secret>`. In the library, pass `headers` to `webhook({ url, headers })`.
+`WEBHOOK_URLS` takes one URL or a comma-separated list. Name entries with `name=url` (for example `home=https://...`); unnamed ones are called `webhook`, or `webhook-1`, `webhook-2`, ... when there are several. Each is its own destination with its own result. `WEBHOOK_SECRET`, if set, is sent as `Authorization: Bearer <secret>`.
 
 Each receives a POST with `Content-Type: application/json`:
 
@@ -176,6 +135,6 @@ Each receives a POST with `Content-Type: application/json`:
 
 ## Development
 
-`pnpm check` runs lint, types, and tests; `pnpm build:checked` adds a production build; `pnpm test:pack` installs the packed library in a fresh project. Tests mock providers and send nothing real. To add a provider, add a factory in `src/lib/providers.ts` using the shared `request` helper, then add it to `src/lib/env.ts` if it should be configurable by environment.
+`pnpm check` runs lint, types, and tests; `pnpm build:checked` adds a production build. Tests mock providers and send nothing real. To add a provider, add a factory in `src/lib/providers.ts` using the shared `request` helper, then register its variables in `src/lib/env.ts`.
 
-The library's exports and the MCP tool arguments follow semantic versioning from 1.0; before then, minor versions may change them. Report security issues privately through [GitHub security advisories](https://github.com/LMol-4/alert-my-human/security/advisories/new). [MIT license](LICENSE).
+The MCP tool arguments follow semantic versioning from 1.0; before then, minor versions may change them. Report security issues privately through [GitHub security advisories](https://github.com/LMol-4/alert-my-human/security/advisories/new). [MIT license](LICENSE).

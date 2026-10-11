@@ -1,51 +1,62 @@
-import { CHANNELS } from '@/app/services/channels';
-import type { AlertInput } from '@/app/services/alert';
+import { createAlerter, destinationsFromEnv, type DeliveryResult, type Severity } from '@/lib';
 
-const CHANNEL_NAMES = CHANNELS.map((channel) => channel.name);
+const text = (value: string) => [{ type: 'text' as const, text: value }];
 
 export function listChannels() {
-  const configured = CHANNELS.filter((channel) => channel.isConfigured()).map((channel) => channel.name);
-  const text = configured.length
-    ? `Configured channels: ${configured.join(', ')}.`
-    : 'No channels are configured. Set env vars for at least one channel — see .env.example.';
-  return { content: [{ type: 'text' as const, text }] };
+  const { destinations, errors } = destinationsFromEnv();
+  const channels = Object.keys(destinations);
+  const lines = [
+    channels.length
+      ? `Configured channels: ${channels.join(', ')}.`
+      : 'No channels are configured. Set the environment variables for at least one channel.',
+    ...errors.map((error) => `Misconfigured: ${error}.`),
+  ];
+  return { content: text(lines.join('\n')), structuredContent: { channels, errors } };
 }
+
+function describe(result: DeliveryResult) {
+  const details = [result.error && `${result.error.code}: ${result.error.message}`, result.reused && 'shared with an identical in-flight send']
+    .filter(Boolean)
+    .join('; ');
+  return `${result.destination}${details ? ` (${details})` : ''}`;
+}
+
+const LABELS: Array<[DeliveryResult['outcome'], string]> = [
+  ['accepted', 'Accepted'],
+  ['rejected', 'Rejected'],
+  ['unknown', 'Unknown outcome (may have been delivered)'],
+  ['not_attempted', 'Not attempted'],
+  ['suppressed', 'Suppressed'],
+];
 
 export async function sendAlert(input: {
   channels: string[];
-  severity: AlertInput['severity'];
+  severity?: Severity;
   title: string;
   message: string;
   context?: Record<string, string>;
+  idempotencyKey?: string;
 }) {
   const { channels, ...alert } = input;
-  const requested = [...new Set(channels)];
-  const unknown = requested.filter((name) => !CHANNEL_NAMES.includes(name));
-  const targets = CHANNELS.filter((channel) => requested.includes(channel.name));
-  const unconfigured = targets.filter((channel) => !channel.isConfigured());
-  const ready = targets.filter((channel) => channel.isConfigured());
+  // Built per call so environment changes and test overrides apply; no in-memory safeguards on serverless.
+  const alerter = createAlerter({ destinations: destinationsFromEnv().destinations });
+  let sent;
+  try {
+    sent = await alerter.send({ ...alert, destinations: channels });
+  } catch (error) {
+    return { content: text(`Invalid alert: ${(error as Error).message}`), isError: true };
+  }
 
-  const results = await Promise.allSettled(ready.map((channel) => channel.send(alert)));
-
-  const sent = ready.filter((_, i) => results[i].status === 'fulfilled').map((channel) => channel.name);
-  const failed = [
-    ...ready
-      .map((channel, i) => ({ channel, result: results[i] }))
-      .filter(({ result }) => result.status === 'rejected')
-      .map(({ channel, result }) => {
-        const reason = (result as PromiseRejectedResult).reason;
-        return `${channel.name} (${reason instanceof Error ? reason.message : String(reason)})`;
-      }),
-    ...unconfigured.map((channel) => `${channel.name} (not configured)`),
-    ...unknown.map((name) => `${name} (unknown channel)`),
-  ];
-
-  const summary = [
-    sent.length ? `Sent via: ${sent.join(', ')}.` : '',
-    failed.length ? `Failed: ${failed.join(', ')}.` : '',
-  ]
+  const summary = LABELS.map(([outcome, label]) => {
+    const matching = sent.results.filter((result) => result.outcome === outcome);
+    return matching.length ? `${label}: ${matching.map(describe).join(', ')}.` : '';
+  })
     .filter(Boolean)
     .join(' ');
-
-  return { content: [{ type: 'text' as const, text: summary }] };
+  return {
+    content: text(summary),
+    structuredContent: { ...sent },
+    // Partial success is not an error; callers should retry only failed destinations.
+    isError: !sent.results.some((result) => result.outcome === 'accepted'),
+  };
 }

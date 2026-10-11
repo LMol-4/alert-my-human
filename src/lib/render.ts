@@ -1,13 +1,40 @@
-export type AlertSeverity = 'info' | 'success' | 'warning' | 'error';
+import { DeliveryError, type Alert, type Severity, type ValidAlert } from './types';
 
-export interface AlertInput {
-  severity: AlertSeverity;
-  title: string;
-  message: string;
-  context?: Record<string, string>;
+export const LIMITS = { title: 250, message: 4000, contextEntries: 20, contextKey: 64, contextValue: 500 };
+
+const SEVERITIES: Severity[] = ['info', 'success', 'warning', 'error'];
+
+/** Shared input validation for the library and MCP entry points. Throws TypeError. */
+export function validateAlert({ title, message, severity = 'info', context }: Alert): ValidAlert {
+  const text = (name: string, value: unknown, max: number) => {
+    if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
+    if (value.length > max) throw new TypeError(`${name} must be at most ${max} characters`);
+  };
+  text('title', title, LIMITS.title);
+  text('message', message, LIMITS.message);
+  if (!SEVERITIES.includes(severity)) throw new TypeError(`severity must be one of ${SEVERITIES.join(', ')}`);
+  if (context !== undefined) {
+    if (typeof context !== 'object' || context === null) throw new TypeError('context must be an object of strings');
+    const entries = Object.entries(context);
+    if (entries.length > LIMITS.contextEntries) throw new TypeError(`context allows at most ${LIMITS.contextEntries} entries`);
+    for (const [key, value] of entries) {
+      text('context key', key, LIMITS.contextKey);
+      if (typeof value !== 'string' || value.length > LIMITS.contextValue) {
+        throw new TypeError(`context values must be strings of at most ${LIMITS.contextValue} characters`);
+      }
+    }
+  }
+  return { title, message, severity, ...(context && { context }) };
 }
 
-export const SEVERITY_META: Record<AlertSeverity, { emoji: string; color: string; label: string }> = {
+// Final rendered-size check; limits are in UTF-16 units, matching JavaScript string length.
+export function checkLength(provider: string, text: string, max: number) {
+  if (text.length > max) {
+    throw new DeliveryError('INVALID_PAYLOAD', `${provider} message is ${text.length} characters; the limit is ${max}`, 'not_attempted', 0);
+  }
+}
+
+export const SEVERITY_META: Record<Severity, { emoji: string; color: string; label: string }> = {
   info: { emoji: '🔵', color: '#2563eb', label: 'Info' },
   success: { emoji: '🟢', color: '#16a34a', label: 'Success' },
   warning: { emoji: '🟡', color: '#d97706', label: 'Warning' },
@@ -31,7 +58,7 @@ function escapeSlack(value: string) {
 }
 
 // Plain text — used by SMS and as the email/Slack notification fallback.
-export function renderText({ severity, title, message, context }: AlertInput) {
+export function renderText({ severity, title, message, context }: ValidAlert) {
   const { label } = SEVERITY_META[severity];
   const context_ = contextEntries(context)
     .map(([key, value]) => `${key}: ${value}`)
@@ -42,7 +69,7 @@ export function renderText({ severity, title, message, context }: AlertInput) {
 }
 
 // HTML email with a severity-coloured header bar.
-export function renderEmail(alert: AlertInput) {
+export function renderEmail(alert: ValidAlert) {
   const { emoji, color, label } = SEVERITY_META[alert.severity];
   const subject = `${emoji} ${alert.title}`;
   const entries = contextEntries(alert.context);
@@ -80,21 +107,25 @@ export function renderEmail(alert: AlertInput) {
   return { subject, html, text: renderText(alert) };
 }
 
+const SLACK_SECTION_MAX = 3000;
+
 // Slack incoming-webhook payload: blocks wrapped in a colour-barred attachment.
-export function renderSlack(alert: AlertInput) {
+export function renderSlack(alert: ValidAlert) {
   const { emoji, color } = SEVERITY_META[alert.severity];
   const entries = contextEntries(alert.context);
 
-  const blocks: unknown[] = [
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*${emoji} ${escapeSlack(alert.title)}*\n${escapeSlack(alert.message)}` },
-    },
-  ];
-  if (entries.length) {
+  const text = `*${emoji} ${escapeSlack(alert.title)}*\n${escapeSlack(alert.message)}`;
+  checkLength('Slack', text, SLACK_SECTION_MAX);
+  const blocks: unknown[] = [{ type: 'section', text: { type: 'mrkdwn', text } }];
+  // Slack allows at most ten fields per section; longer context becomes one text block.
+  if (entries.length > 10) {
+    const text = entries.map(([key, value]) => `*${escapeSlack(key)}:* ${escapeSlack(value)}`).join('\n');
+    checkLength('Slack context', text, SLACK_SECTION_MAX);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text } });
+  } else if (entries.length) {
     blocks.push({
       type: 'section',
-      fields: entries.slice(0, 10).map(([key, value]) => ({
+      fields: entries.map(([key, value]) => ({
         type: 'mrkdwn',
         text: `*${escapeSlack(key)}*\n${escapeSlack(value)}`,
       })),
@@ -105,7 +136,7 @@ export function renderSlack(alert: AlertInput) {
 }
 
 // Telegram sendMessage payload (minus chat_id) using HTML parse mode.
-export function renderTelegram(alert: AlertInput) {
+export function renderTelegram(alert: ValidAlert) {
   const { emoji } = SEVERITY_META[alert.severity];
   const lines = [`${emoji} <b>${escapeHtml(alert.title)}</b>`, '', escapeHtml(alert.message)];
   const entries = contextEntries(alert.context);

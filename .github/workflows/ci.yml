@@ -41,3 +41,5 @@ jobs:
         run: pnpm test
       - name: Production build
         run: pnpm build
+      - name: Packed library smoke test
+        run: pnpm test:pack

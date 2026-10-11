@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { createMcpHandler } from 'mcp-handler';
 import { isAuthorized } from '@/app/services/auth';
 import { listChannels, sendAlert } from '@/app/services/tools';
+import { LIMITS } from '@/lib';
 
-// Allow two 10s attempts plus the 500ms retry delay and handler overhead.
+// Sends stop starting attempts after a 25s deadline; leave room for handler overhead.
 export const maxDuration = 30;
 
 const mcpHandler = createMcpHandler(
@@ -23,19 +24,26 @@ const mcpHandler = createMcpHandler(
       {
         title: 'Send Alert',
         description:
-          'Send an alert to specific channels. Use this to notify a human when something needs their attention (a job failed, data is missing, a task succeeded, etc). Call list_channels first to see which channel names are configured.',
+          'Send an alert to specific channels. Use this to notify a human when something needs their attention (a job failed, data is missing, a task succeeded, etc). Call list_channels first to see which channel names are configured. Each channel reports accepted, rejected, unknown (may have been delivered), not_attempted, or suppressed; retry only channels that did not accept.',
         inputSchema: z.object({
           channels: z
             .array(z.string())
             .min(1)
             .describe('Channel names to deliver to (e.g. "slack", "email"). Call list_channels to see what is configured.'),
           severity: z.enum(['info', 'success', 'warning', 'error']).default('info'),
-          title: z.string().describe('Short headline for the alert.'),
-          message: z.string().describe('The body of the alert.'),
+          title: z.string().trim().min(1).max(LIMITS.title).describe('Short headline for the alert.'),
+          message: z.string().trim().min(1).max(LIMITS.message).describe('The body of the alert.'),
           context: z
-            .record(z.string(), z.string())
+            .record(z.string().min(1).max(LIMITS.contextKey), z.string().max(LIMITS.contextValue))
+            .refine((context) => Object.keys(context).length <= LIMITS.contextEntries, `At most ${LIMITS.contextEntries} entries`)
             .optional()
             .describe('Optional key/value details shown alongside the message (e.g. job name, error code).'),
+          idempotencyKey: z
+            .string()
+            .min(1)
+            .max(200)
+            .optional()
+            .describe('Optional. Reuse the same key when retrying this alert; supported by email and sent to webhooks.'),
         }),
       },
       async (input) => sendAlert(input),

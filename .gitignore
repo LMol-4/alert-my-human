@@ -43,3 +43,12 @@ next-env.d.ts
 
 # claude
 .claude
+
+# Local notes — do not commit
+/CODEBASE_REVIEW.md
+/LIGHTWEIGHT_LIBRARY_REVIEW.md
+/CONTRIBUTING.md
+/docs/
+
+# library build
+/dist/

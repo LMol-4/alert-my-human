@@ -2,20 +2,6 @@
   "name": "alert-my-human",
   "version": "0.1.0",
   "private": true,
-  "description": "Send alerts to email, Slack, Telegram, SMS, or webhooks from a script or an MCP agent.",
-  "license": "MIT",
-  "repository": "github:LMol-4/alert-my-human",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -24,23 +10,22 @@
     "test": "tsx --test --test-force-exit tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "build:checked": "pnpm check && pnpm build",
-    "build:lib": "tsc -p tsconfig.lib.json",
-    "prepack": "pnpm build:lib",
-    "test:pack": "node scripts/pack-smoke.mjs"
+    "build:checked": "pnpm check && pnpm build"
+  },
+  "dependencies": {
+    "mcp-handler": "^1.1.0",
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "19.2.17",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
-    "mcp-handler": "^1.1.0",
-    "next": "16.2.10",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
     "tsx": "^4.23.15",
-    "typescript": "^5",
-    "zod": "^4.4.3"
+    "typescript": "^5"
   },
   "packageManager": "pnpm@12.9.1",
   "engines": {

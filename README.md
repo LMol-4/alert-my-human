@@ -119,21 +119,6 @@ const desktop: Provider = {
 };
 ```
 
-**Optional in-memory safeguards**, all off by default:
-
-```ts
-createAlerter({
-  destinations,
-  dedupe: { ttlMs: 10 * 60_000, maxEntries: 1000 }, // share identical concurrent sends; suppress repeats of an accepted alert
-  rateLimit: { limit: 5, windowMs: 60_000 },          // per destination
-  concurrency: { max: 4, maxQueued: 100 },            // overflow is rejected, not queued without limit
-  history: 50,                                        // alerts.recent() returns result metadata, never bodies
-  onResult: (result) => console.log(result),          // errors thrown here are ignored
-});
-```
-
-This state lives in one alerter instance. It resets on restart and is not shared across processes or serverless instances, so keep one alerter for the life of your script. Only accepted sends are remembered: rejected and unknown outcomes can be sent again. The MCP server does not enable these.
-
 ## Results
 
 Each destination gets its own result:
@@ -148,10 +133,9 @@ Each destination gets its own result:
 | `accepted` | The provider accepted it. This does not prove it was received or read. |
 | `rejected` | The provider or a pre-send check refused it. |
 | `unknown` | No clear answer, e.g. a timeout; it may have been delivered. |
-| `not_attempted` | Not sent, e.g. an unknown destination or a full queue. |
-| `suppressed` | Not sent because of a local duplicate check or rate limit. |
+| `not_attempted` | Not sent, e.g. an unknown channel name. |
 
-Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `ABORTED`, `UNKNOWN_DESTINATION`, `DUPLICATE`, `LOCAL_RATE_LIMIT`, `OVERLOADED`, `PROVIDER_ERROR`) and a short message without URLs or credentials. MCP returns the same data as structured content plus a text summary. It sets `isError` only when no destination accepted; on partial success, retry only the destinations that failed.
+Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `ABORTED`, `UNKNOWN_DESTINATION`, `PROVIDER_ERROR`) and a short message without URLs or credentials. MCP returns the same data as structured content plus a text summary. It sets `isError` only when no destination accepted; on partial success, retry only the destinations that failed.
 
 ## Delivery behavior
 

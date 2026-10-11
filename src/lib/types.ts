@@ -14,9 +14,9 @@ export type ValidAlert = Required<Pick<Alert, 'title' | 'message' | 'severity'>>
  * accepted: the provider accepted the request (not proof of receipt).
  * rejected: the provider (or a pre-send check) refused it.
  * unknown: the request may or may not have been processed, e.g. a timeout.
- * not_attempted / suppressed: nothing was sent.
+ * not_attempted: nothing was sent.
  */
-export type Outcome = 'accepted' | 'rejected' | 'unknown' | 'not_attempted' | 'suppressed';
+export type Outcome = 'accepted' | 'rejected' | 'unknown' | 'not_attempted';
 
 export type ErrorCode =
   | 'TIMEOUT'
@@ -26,9 +26,6 @@ export type ErrorCode =
   | 'INVALID_PAYLOAD'
   | 'ABORTED'
   | 'UNKNOWN_DESTINATION'
-  | 'DUPLICATE'
-  | 'LOCAL_RATE_LIMIT'
-  | 'OVERLOADED'
   | 'PROVIDER_ERROR';
 
 export interface DeliveryResult {
@@ -38,8 +35,6 @@ export interface DeliveryResult {
   durationMs: number;
   /** Provider message ID when the provider returns one. */
   providerId?: string;
-  /** Set when this result was shared with an identical in-flight send. */
-  reused?: 'in-flight';
   retryAfterMs?: number;
   error?: { code: ErrorCode; message: string };
 }

@@ -24,7 +24,7 @@ const mcpHandler = createMcpHandler(
       {
         title: 'Send Alert',
         description:
-          'Send an alert to specific channels. Use this to notify a human when something needs their attention (a job failed, data is missing, a task succeeded, etc). Call list_channels first to see which channel names are configured. Each channel reports accepted, rejected, unknown (may have been delivered), not_attempted, or suppressed; retry only channels that did not accept.',
+          'Send an alert to specific channels. Use this to notify a human when something needs their attention (a job failed, data is missing, a task succeeded, etc). Call list_channels first to see which channel names are configured. Each channel reports accepted, rejected, unknown (may have been delivered), or not_attempted; retry only channels that did not accept.',
         inputSchema: z.object({
           channels: z
             .array(z.string())

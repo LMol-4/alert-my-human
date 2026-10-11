@@ -85,7 +85,7 @@ Required: `channels`, `title` (up to 250 characters), and `message` (up to 4000)
 
 ## Library
 
-Not yet published to npm. Build a tarball from a clone with `pnpm pack`, then `npm install ./alert-my-human-0.1.0.tgz` in your project. It has no runtime dependencies and needs Node.js 22 or later.
+Not yet published to npm. Build a tarball from a clone with `pnpm pack`, then `npm install ./alert-my-human-0.1.0.tgz` in your project. It has no runtime dependencies and needs Node.js 22 or later (tested on 24).
 
 ```ts
 import { createAlerter, telegram, email } from 'alert-my-human';

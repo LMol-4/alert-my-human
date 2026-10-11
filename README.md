@@ -1,66 +1,197 @@
 # alert-my-human
 
-A lightweight MCP server that lets agents send multichannel alerts — useful for notifying a human when a scheduled job fails, data is missing, or something otherwise needs attention.
+Let your agent or script notify you when a task finishes, a job fails, or something needs your attention. Send alerts through email, Slack, Telegram, SMS, or webhooks.
 
-Supports email, Slack, Telegram, SMS, and generic webhooks. Enabled a channel by setting its env vars. Callers pick which configured channels to deliver to on each call.
+Use it two ways, with one delivery core:
 
-## Deploy
+- **MCP server** for agents: deploy on Vercel or run locally.
+- **TypeScript/JavaScript library** for scripts: import it and send directly.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FLMol-4%2Falert-my-human&env=AUTH_API_KEY&envDescription=A%20random%20secret%20callers%20send%20as%20a%20bearer%20token&envLink=https%3A%2F%2Fgithub.com%2FLMol-4%2Falert-my-human%23setup)
+No database, queue, or background service. Bring your own provider credentials; hosting and notification providers may charge for usage.
 
-One-click deploy prompts only for `AUTH_API_KEY` (the one required var). Add whichever channel vars you want afterward in the Vercel dashboard (Project → Settings → Environment Variables) — see [Setup](#setup) below.
+## Quick start (MCP server)
 
-## Tools
+### 1. Choose a channel
 
-### `list_channels`
+Configure just one to begin. Leave the other variables unset.
 
-Returns which channels are currently configured. No params. Call this before `send_alert` to know which channel names are valid.
+| Channel | Variables | Setup |
+| --- | --- | --- |
+| `email` | `RESEND_API_KEY`, `SENDING_EMAIL`, `ALERT_EMAIL` (comma-separated for several) | [Resend](https://resend.com/docs/send-with-nodejs): API key and a verified sending domain |
+| `slack` | `SLACK_WEBHOOK_URL` | [Incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/); treat the URL as a secret |
+| `telegram` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Create a bot with [@BotFather](https://t.me/BotFather), message it, then read `message.chat.id` from [getUpdates](https://core.telegram.org/bots/api#getupdates) |
+| `sms` | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `ALERT_PHONE_NUMBER` | [Twilio](https://www.twilio.com/docs/messaging/quickstart); numbers in international format, e.g. `+353...` |
+| webhooks | `WEBHOOK_URLS`, optional `WEBHOOK_SECRET` | See [Webhooks](#webhooks) |
 
-### `send_alert`
+Set `AUTH_API_KEY` to a long random secret, separate from your provider credentials:
 
-| Param      | Type                              | Required | Description                                                        |
-| ---------- | --------------------------------- | -------- | -------------------------------------------------------------------- |
-| `channels` | array of channel names            | Yes      | Which channels to deliver to (e.g. `["slack", "email"]`). See `list_channels`. |
-| `severity` | `info` \| `success` \| `warning` \| `error` | No (default `info`) | Controls the color/emoji used in the alert.               |
-| `title`    | string                            | Yes      | Short headline for the alert.                                        |
-| `message`  | string                            | Yes      | Body of the alert.                                                    |
-| `context`  | object of string key/value pairs  | No       | Extra details rendered as a list (e.g. job name, error code).        |
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
 
-Channels are delivered independently, so one failing channel doesn't block the others — the response reports which channels sent and which failed. HTTP deliveries use a 10s timeout per attempt and retry once after 500ms on a transient failure (network error, timeout, HTTP 429, or 5xx). Email SDK calls have a 10s timeout and are not retried. The route allows 30s so the HTTP retry budget can finish. A timeout does not prove a provider rejected a message, so retries can occasionally produce duplicate alerts.
+### 2. Run the server
 
-## Setup
+**Vercel — no local server to keep running:**
 
-1. Copy `.env.example` to `.env` and fill in:
-   - `AUTH_API_KEY` — any random secret string; callers must send it as `Authorization: Bearer <key>`.
-   - Then configure one or more channels (leave a channel's vars unset to disable it):
-     - **Email** — `SENDING_EMAIL`, `RESEND_API_KEY` (from [resend.com](https://resend.com)), `ALERT_EMAIL` (one address, or several comma-separated).
-     - **Slack** — `SLACK_WEBHOOK_URL` (an [incoming webhook](https://api.slack.com/messaging/webhooks)).
-     - **Telegram** — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
-     - **SMS** — `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `ALERT_PHONE_NUMBER` (from [twilio.com](https://twilio.com)).
-     - **Webhook** — `WEBHOOK_URLS`, comma-separated; each receives the alert as JSON.
-2. Use Node.js 24 and pnpm 12.9.1, then run `pnpm install`
-3. `pnpm dev`
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FLMol-4%2Falert-my-human&env=AUTH_API_KEY&envDescription=A%20random%20secret%20callers%20send%20as%20a%20bearer%20token&envLink=https%3A%2F%2Fgithub.com%2FLMol-4%2Falert-my-human%23quick-start-mcp-server)
 
-## Connecting an MCP client
+Enter `AUTH_API_KEY` when prompted. Add your channel variables in the project's [environment settings](https://vercel.com/docs/environment-variables/managing-environment-variables) for Production, then redeploy so they take effect. Your endpoint is `https://<your-domain>/api/mcp`.
 
-Register the server with a static bearer token header, for example in Claude Code's `mcpServers` config:
+**Locally — Node.js 24 and pnpm 12.9.1:**
+
+```sh
+git clone https://github.com/LMol-4/alert-my-human.git
+cd alert-my-human
+pnpm install --frozen-lockfile
+```
+
+Copy `.env.example` to `.env`, set your key and channel variables, then run `pnpm dev`. The endpoint is `http://localhost:3000/api/mcp`. Keep the process running; a remote client cannot reach your computer's localhost.
+
+### 3. Connect your agent
+
+Use an MCP client that supports HTTP servers with custom headers. For clients using `mcpServers` configuration:
 
 ```json
 {
-  "type": "http",
-  "url": "https://your-deployment.example.com/api/mcp",
-  "headers": {
-    "Authorization": "Bearer <AUTH_API_KEY>"
+  "mcpServers": {
+    "alert-my-human": {
+      "type": "http",
+      "url": "https://<your-domain>/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <AUTH_API_KEY>"
+      }
+    }
   }
 }
 ```
 
-## Testing
+Replace both placeholders; use the localhost URL for a local client. Keep the real token out of committed client configuration. [Claude Code configuration guidance](https://code.claude.com/docs/en/mcp).
 
-Run `pnpm test` for automated regression tests (provider requests are mocked), `pnpm lint` for lint checks, and `pnpm typecheck` for TypeScript checks. `pnpm check` runs all three; `pnpm build:checked` also makes a production build. Tests require no provider credentials and send no real alerts.
+### 4. Send your first alert
 
-Run `npx @modelcontextprotocol/inspector@latest http://localhost:3000 undefined`, then connect it to `http://localhost:3000/api/mcp` with an `Authorization: Bearer <AUTH_API_KEY>` header.
+Ask your agent: **“Use alert-my-human to list my channels, then send a test alert through one of them.”**
 
-## Roadmap
+`list_channels` takes no arguments and also reports partly configured channels. Example `send_alert` arguments, if email is configured:
 
-- Phone call alerts
+```json
+{
+  "channels": ["email"],
+  "title": "It works!",
+  "message": "Your agent can reach you."
+}
+```
+
+Required: `channels`, `title` (up to 250 characters), and `message` (up to 4000). Optional: `severity` (`info`, `success`, `warning`, `error`; default `info`), `context` (up to 20 string key/value pairs), and `idempotencyKey` (reuse it when retrying the same alert).
+
+## Library
+
+Not yet published to npm. Build a tarball from a clone with `pnpm pack`, then `npm install ./alert-my-human-0.1.0.tgz` in your project. It has no runtime dependencies and needs Node.js 22 or later.
+
+```ts
+import { createAlerter, telegram, email } from 'alert-my-human';
+
+const alerts = createAlerter({
+  destinations: {
+    phone: telegram({ token: process.env.BOT_TOKEN!, chatId: process.env.CHAT_ID! }),
+    inbox: email({ apiKey: process.env.RESEND_API_KEY!, from: 'alerts@example.com', to: 'me@example.com' }),
+  },
+});
+
+const { results } = await alerts.send({
+  destinations: ['phone'],
+  title: 'Export complete',
+  message: 'Your file is ready.',
+});
+```
+
+Providers: `email`, `slack`, `telegram`, `sms`, and `webhook`. Name destinations however you like, including several of the same provider. `destinationsFromEnv()` builds destinations from the variables above. Invalid configuration throws at construction, naming the setting but never its value; invalid alerts make `send` throw before anything is sent.
+
+**Custom provider:** any object with `send(alert, options)`. Return `{ id }` when accepted; throw `DeliveryError` with a code and outcome for known failures. Other errors are reported as `unknown` with a generic message.
+
+```ts
+import { DeliveryError, type Provider } from 'alert-my-human';
+
+const desktop: Provider = {
+  async send(alert) {
+    const response = await fetch('http://localhost:8080/notify', { method: 'POST', body: alert.title });
+    if (!response.ok) throw new DeliveryError('HTTP_ERROR', `HTTP ${response.status}`);
+  },
+};
+```
+
+**Optional in-memory safeguards**, all off by default:
+
+```ts
+createAlerter({
+  destinations,
+  dedupe: { ttlMs: 10 * 60_000, maxEntries: 1000 }, // share identical concurrent sends; suppress repeats of an accepted alert
+  rateLimit: { limit: 5, windowMs: 60_000 },          // per destination
+  concurrency: { max: 4, maxQueued: 100 },            // overflow is rejected, not queued without limit
+  history: 50,                                        // alerts.recent() returns result metadata, never bodies
+  onResult: (result) => console.log(result),          // errors thrown here are ignored
+});
+```
+
+This state lives in one alerter instance. It resets on restart and is not shared across processes or serverless instances, so keep one alerter for the life of your script. Only accepted sends are remembered: rejected and unknown outcomes can be sent again. The MCP server does not enable these.
+
+## Results
+
+Each destination gets its own result:
+
+```ts
+{ destination: 'phone', outcome: 'accepted', attempts: 1, durationMs: 212, providerId: '42' }
+{ destination: 'inbox', outcome: 'unknown', attempts: 1, durationMs: 10003, error: { code: 'TIMEOUT', message: 'No response within 10s' } }
+```
+
+| Outcome | Meaning |
+| --- | --- |
+| `accepted` | The provider accepted it. This does not prove it was received or read. |
+| `rejected` | The provider or a pre-send check refused it. |
+| `unknown` | No clear answer, e.g. a timeout; it may have been delivered. |
+| `not_attempted` | Not sent, e.g. an unknown destination or a full queue. |
+| `suppressed` | Not sent because of a local duplicate check or rate limit. |
+
+Errors use a code (`TIMEOUT`, `NETWORK`, `HTTP_ERROR`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `ABORTED`, `UNKNOWN_DESTINATION`, `DUPLICATE`, `LOCAL_RATE_LIMIT`, `OVERLOADED`, `PROVIDER_ERROR`) and a short message without URLs or credentials. MCP returns the same data as structured content plus a text summary. It sets `isError` only when no destination accepted; on partial success, retry only the destinations that failed.
+
+## Delivery behavior
+
+- Each attempt times out after 10 seconds, and a send stops starting attempts after 25 seconds (`deadlineMs`). Library callers can also pass `signal` to cancel.
+- At most two attempts per destination. Rate limits (429) and server errors (5xx) are retried, honoring the provider's retry delay when it fits the deadline. Failures to connect are retried. 4xx responses are not.
+- Timeouts and dropped connections are not retried, since the provider may already have the alert. Exception: email with an `idempotencyKey`, which Resend deduplicates.
+- `idempotencyKey` is forwarded per destination as `<key>:<destination>` to Resend and to webhooks. It is not a universal guarantee; duplicates are still possible.
+- Messages must fit each provider's limit (Slack 3000 characters per section, Telegram 4096, SMS 1600) or are rejected before sending. Keep messages brief.
+- Nothing is stored and no work survives shutdown. Scheduling and durable retries are up to the caller.
+
+## Webhooks
+
+`WEBHOOK_URLS` takes one URL or a comma-separated list. Name entries with `name=url` (for example `home=https://...`); unnamed ones are called `webhook`, or `webhook-1`, `webhook-2`, ... when there are several. Each is its own destination with its own result. `WEBHOOK_SECRET`, if set, is sent as `Authorization: Bearer <secret>`. In the library, pass `headers` to `webhook({ url, headers })`.
+
+Each receives a POST with `Content-Type: application/json`:
+
+```json
+{
+  "id": "5f0c1c1e-...",
+  "severity": "info",
+  "title": "Task complete",
+  "message": "Your export is ready.",
+  "context": { "job": "export" }
+}
+```
+
+`id` is unique per send and stays the same across retries and destinations. `context` is optional. Redirects are not followed. Errors report only the HTTP status.
+
+## If something goes wrong
+
+| Symptom | Check |
+| --- | --- |
+| Unauthorized | The server key and `Bearer <key>` header match. |
+| No channels listed | All variables for a channel are set; restart locally or redeploy. `list_channels` names missing variables. |
+| `rejected` with `HTTP_ERROR` | Check credentials and recipient permissions. Except for webhooks, the message includes the provider's reason. |
+| `INVALID_PAYLOAD` | Shorten the message or context for that channel. |
+| Browser shows no page | This is an MCP endpoint, not a website; connect through your client. |
+
+## Development
+
+`pnpm check` runs lint, types, and tests; `pnpm build:checked` adds a production build; `pnpm test:pack` installs the packed library in a fresh project. Tests mock providers and send nothing real. To add a provider, add a factory in `src/lib/providers.ts` using the shared `request` helper, then add it to `src/lib/env.ts` if it should be configurable by environment.
+
+The library's exports and the MCP tool arguments follow semantic versioning from 1.0; before then, minor versions may change them. Report security issues privately through [GitHub security advisories](https://github.com/LMol-4/alert-my-human/security/advisories/new). [MIT license](LICENSE).
